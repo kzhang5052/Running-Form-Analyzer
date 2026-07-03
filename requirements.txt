@@ -1,0 +1,7 @@
+# Python 3.12 (MediaPipe has no 3.13/3.14 wheels yet)
+mediapipe==0.10.35
+opencv-python
+numpy
+flask
+scipy
+imageio-ffmpeg

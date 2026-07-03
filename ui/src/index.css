@@ -1,0 +1,61 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* shadcn tokens mapped to the lab theme (dark-only app) */
+    --background: 210 15% 5%;
+    --foreground: 210 12% 90%;
+    --card: 210 13% 8%;
+    --card-foreground: 210 12% 90%;
+    --popover: 210 13% 8%;
+    --popover-foreground: 210 12% 90%;
+    --primary: 72 86% 57%;
+    --primary-foreground: 75 100% 6%;
+    --secondary: 210 12% 14%;
+    --secondary-foreground: 210 12% 90%;
+    --muted: 210 12% 14%;
+    --muted-foreground: 210 8% 58%;
+    --accent: 210 12% 14%;
+    --accent-foreground: 210 12% 90%;
+    --destructive: 0 72% 60%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 210 12% 15%;
+    --input: 210 12% 15%;
+    --ring: 72 86% 57%;
+    --radius: 0.25rem;
+  }
+
+  html {
+    color-scheme: dark;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-ink text-fog antialiased;
+    font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+    font-feature-settings: 'tnum';
+  }
+
+  ::selection {
+    background: #c8f135;
+    color: #0a0c0e;
+  }
+}
+
+@layer utilities {
+  .font-display {
+    font-family: 'Avenir Next Condensed', 'Arial Narrow', 'Helvetica Neue',
+      sans-serif;
+  }
+  .font-data {
+    font-family: 'SF Mono', ui-monospace, Menlo, monospace;
+  }
+  .microlabel {
+    @apply font-data text-[11px] uppercase tracking-[0.18em] text-steel;
+  }
+}

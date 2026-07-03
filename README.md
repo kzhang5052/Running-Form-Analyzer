@@ -1,0 +1,64 @@
+# 🏃 Running Form Analyzer
+
+Analyze your running form from a video, fully locally on your Mac. Upload a
+clip, get back an annotated video (skeleton + foot strikes) plus metrics and
+coaching feedback on:
+
+- **Cadence** (steps/min)
+- **Overstriding** — shin angle & foot reach at contact
+- **Foot-strike type** — heel / midfoot / forefoot
+- **Trunk lean**
+- **Knee angle at landing** (stiff-leg landing check)
+- **Vertical oscillation** (bounce; in cm if you give your height)
+- **Left/right symmetry**
+- **Arm carry** (elbow angle)
+
+Built on MediaPipe pose estimation (33 landmarks/frame). Nothing is uploaded
+anywhere — it all runs on-device.
+
+## Run the web app
+
+```bash
+cd ~/Claude/Projects/running-form-analyzer
+.venv/bin/python app.py
+# then open http://127.0.0.1:5177
+```
+
+## Or use the CLI
+
+```bash
+.venv/bin/python analyzer.py path/to/run.mp4 --height 183
+# writes run_annotated.mp4 + run_annotated.json next to your video
+```
+
+## Filming tips (matter a lot)
+
+- **Side view**, camera roughly hip height, phone steady (prop it up or have
+  someone hold it still).
+- Whole body in frame for the entire clip; 5–15 s of continuous running.
+- Treadmill side-view is ideal. Outdoors, run past a stationary camera.
+- Good light; avoid heavy backlight. Only the first 30 s are analyzed.
+
+## How the numbers are computed
+
+Foot strikes are detected as the lowest points of each ankle's trajectory.
+At each strike the shin angle, knee angle, foot reach (ankle ahead of hip,
+in leg-lengths), and heel-vs-toe height (strike type) are measured. Cadence
+comes from the merged strike train; bounce from the detrended hip midpoint;
+trunk lean from the shoulder–hip line vs vertical. The cm bounce estimate
+assumes hip-to-ankle leg length ≈ 0.49 × your height.
+
+Single-camera pose estimation is directional, not lab-grade — compare videos
+filmed the same way, change one thing at a time, and see a professional if
+something hurts.
+
+## Project layout
+
+- `analyzer.py` — pose extraction, gait metrics, feedback rules, video rendering (also a CLI)
+- `app.py` — Flask backend: serves the UI, upload → background job → JSON report API
+- `ui/` — React + TypeScript + Tailwind + shadcn/ui frontend ("Form/Check")
+  - served as a single pre-bundled file, `ui/bundle.html` — no Node needed to run the app
+  - to change the UI: edit `ui/src/`, then rebuild the bundle with the
+    web-artifacts-builder skill's `bundle-artifact.sh` (requires Node + pnpm)
+- `models/pose_landmarker_full.task` — MediaPipe pose model (downloaded once)
+- `uploads/`, `outputs/` — transient videos and reports (safe to empty)

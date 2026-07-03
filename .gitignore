@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+uploads/
+outputs/
+ui/node_modules/
+ui/dist/
+ui/.parcel-cache/
+.DS_Store
