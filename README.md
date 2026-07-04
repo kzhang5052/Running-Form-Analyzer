@@ -34,6 +34,19 @@ cd ~/Claude/Projects/running-form-analyzer
 # then open http://127.0.0.1:5177
 ```
 
+## Use it as an API
+
+The server exposes a JSON HTTP API (CORS-open, runs alongside the web UI). One
+call, blocking:
+
+```bash
+curl -X POST http://127.0.0.1:5177/api/analyze/sync -F "video=@run.mp4" -F "height=183"
+```
+
+Returns the full report (metrics, cited feedback, references, chart) plus a
+`video_url` for the annotated clip. There's also an async job flow for long
+clips and a `/api/health` check. See [API.md](API.md) for all endpoints.
+
 ## Or use the CLI
 
 ```bash
