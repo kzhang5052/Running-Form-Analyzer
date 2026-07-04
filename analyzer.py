@@ -55,6 +55,44 @@ class AnalysisError(Exception):
     pass
 
 
+# Literature the thresholds and messages are grounded in. Each feedback card
+# carries a key into this table so the UI can cite its source.
+CITATIONS = {
+    "heiderscheit2011": {
+        "cite": "Heiderscheit et al. 2011, Med Sci Sports Exerc",
+        "note": "+5–10% step rate cut knee energy absorption 20–34% and reduced "
+                "vertical COM excursion and step length.",
+        "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC3022995/",
+    },
+    "altman2012": {
+        "cite": "Altman & Davis 2012, Gait & Posture",
+        "note": "Foot-strike angle cutoffs: >8° rearfoot, −1.6°–8° midfoot, "
+                "<−1.6° forefoot.",
+        "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC3278526/",
+    },
+    "folland2017": {
+        "cite": "Folland et al. 2017, Med Sci Sports Exerc",
+        "note": "Pelvis vertical oscillation was the kinematic variable most "
+                "strongly related to running economy (r=0.53); lower is better.",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/28263283/",
+    },
+    "bramah2018": {
+        "cite": "Bramah et al. 2018, Am J Sports Med",
+        "note": "Injured runners showed greater contralateral pelvic drop, "
+                "greater forward trunk lean, and a more extended knee at contact. "
+                "Pelvic drop was the strongest predictor — each 1° raised injury "
+                "odds ~80%.",
+        "url": "https://journals.sagepub.com/doi/full/10.1177/0363546518793657",
+    },
+    "teng2014": {
+        "cite": "Teng & Powers 2014, JOSPT",
+        "note": "Greater forward trunk flexion lowered patellofemoral joint "
+                "stress; too upright raises knee load.",
+        "url": "https://www.jospt.org/doi/10.2519/jospt.2014.5575",
+    },
+}
+
+
 def _interp_nan(a):
     """Linearly interpolate NaNs; returns copy and fraction that was missing."""
     a = a.astype(float).copy()
@@ -209,6 +247,22 @@ def compute_metrics(lm, fps, size, height_cm=None):
                         seg("r_hip", "r_knee") + seg("r_knee", "r_ankle")) / 2)
     px_per_cm = leg_px / (0.49 * height_cm) if height_cm else None
 
+    # --- Camera view: sagittal (side) vs frontal (front/rear) ---
+    # Side-on, the shoulders line up front-to-back so their horizontal spread is
+    # small next to torso height; face-on it is wide. Threshold calibrated on
+    # real clips. Frontal unlocks pelvic drop / crossover; sagittal unlocks
+    # shin angle, foot strike, trunk lean.
+    shoulder_w = np.median(np.abs(S["l_sh"][0] - S["r_sh"][0]))
+    torso_h = np.median(np.abs(mid_sh_y - mid_hip_y)) + 1e-9
+    # ponytail: single-ratio classifier, threshold from side≈0.2–0.5 vs
+    # front≈0.8–1.2 on real clips. Add limb-visibility symmetry if it misfires.
+    view_ratio = shoulder_w / torso_h
+    view = "frontal" if view_ratio > 0.62 else "sagittal"
+
+    # --- Pelvic obliquity (frontal plane), signed deg off horizontal ---
+    pelvis_obliq = np.degrees(np.arctan2(S["r_hip"][1] - S["l_hip"][1],
+                                         np.abs(S["r_hip"][0] - S["l_hip"][0]) + 1e-9))
+
     # --- Foot strikes: ankle at its lowest point (max y) ---
     min_dist = max(3, int(0.45 * fps))
     strikes = {}
@@ -256,25 +310,37 @@ def compute_metrics(lm, fps, size, height_cm=None):
                                        ankle[1] - knee[1] + 1e-9))
         # Foot position relative to hip, in leg lengths, + = ahead of body
         reach = direction * (ankle[0] - hip[0]) / leg_px
+        # Foot-strike angle (Altman & Davis 2012): sole inclination off ground.
+        # +ve = toe up / dorsiflexed (rearfoot), -ve = toe down (forefoot).
         foot_len = math.hypot(toe[0] - heel[0], toe[1] - heel[1]) + 1e-9
-        d = (heel[1] - toe[1]) / foot_len
-        if d > 0.12:
+        fsa = math.degrees(math.asin(np.clip((heel[1] - toe[1]) / foot_len, -1, 1)))
+        if fsa > 8.0:
             fs_type = "heel"
-        elif d < -0.12:
+        elif fsa < -1.6:
             fs_type = "forefoot"
         else:
             fs_type = "midfoot"
         per_strike.append({"frame": int(f), "side": side, "t": f / fps,
                            "knee_angle": knee_angle, "shin_angle": shin,
-                           "reach": reach, "type": fs_type})
+                           "reach": reach, "fsa": fsa, "type": fs_type})
 
     shin_med = float(np.median([s["shin_angle"] for s in per_strike]))
     reach_med = float(np.median([s["reach"] for s in per_strike]))
     knee_at_strike = float(np.median([s["knee_angle"] for s in per_strike]))
+    fsa_med = float(np.median([s["fsa"] for s in per_strike]))
     fs_counts = {}
     for s in per_strike:
         fs_counts[s["type"]] = fs_counts.get(s["type"], 0) + 1
     fs_dominant = max(fs_counts, key=fs_counts.get)
+
+    # --- Frontal-plane metrics (meaningful when view == "frontal") ---
+    # Contralateral pelvic drop: peak obliquity away from level (Bramah 2018).
+    cpd_deg = float(np.percentile(np.abs(pelvis_obliq - np.median(pelvis_obliq)), 95))
+    # Stride width at contact / crossover: ankle separation vs hip width.
+    hip_w = float(np.median(np.abs(S["l_hip"][0] - S["r_hip"][0]))) + 1e-9
+    stance_gap = [abs(S["l_ankle"][0][f] - S["r_ankle"][0][f])
+                  for f, _ in all_strikes]
+    stride_width_ratio = float(np.median(stance_gap)) / hip_w
 
     # --- Trunk lean (deg forward of vertical, in direction of travel) ---
     lean_series = np.degrees(np.arctan2(direction * (mid_sh_x - mid_hip_x),
@@ -324,6 +390,7 @@ def compute_metrics(lm, fps, size, height_cm=None):
     metrics = {
         "n_frames": n, "fps": fps, "duration_s": n / fps,
         "treadmill": treadmill, "direction": direction,
+        "view": view, "view_ratio": float(view_ratio),
         "n_steps": len(all_strikes),
         "cadence": cadence,
         "symmetry_pct": sym_pct,
@@ -333,6 +400,9 @@ def compute_metrics(lm, fps, size, height_cm=None):
         "knee_angle_at_strike": knee_at_strike,
         "foot_strike_type": fs_dominant,
         "foot_strike_counts": fs_counts,
+        "foot_strike_angle_deg": fsa_med,
+        "pelvic_drop_deg": cpd_deg,
+        "stride_width_ratio": stride_width_ratio,
         "vo_pct_leg": vo_pct_leg, "vo_cm": vo_cm,
         "max_knee_flexion": knee_flex,
         "elbow_angle": elbow_med,
@@ -343,147 +413,202 @@ def compute_metrics(lm, fps, size, height_cm=None):
         "l_ankle_y": list(np.round(size[1] - S["l_ankle"][1], 1)[::max(1, n // 600)]),
         "r_ankle_y": list(np.round(size[1] - S["r_ankle"][1], 1)[::max(1, n // 600)]),
         "lean": list(np.round(lean_series, 2)[::max(1, n // 600)]),
+        "pelvis_obliq": list(np.round(pelvis_obliq - np.median(pelvis_obliq), 2)
+                             [::max(1, n // 600)]),
         "strikes": [{"t": round(s["t"], 3), "side": s["side"]} for s in per_strike],
     }
     return metrics, per_strike, chart, S
 
 
 def build_feedback(m):
-    """Turn raw metrics into coaching cards: (status, title, value, message)."""
+    """Coaching cards (status, title, value, message, source). Which cards apply
+    depends on the camera view: sagittal (side) vs frontal (front/rear)."""
     fb = []
+    frontal = m["view"] == "frontal"
 
+    # --- Cadence: valid from any angle (Heiderscheit 2011) ---
     c = m["cadence"]
     if c < 160:
         fb.append(("warn", "Cadence", f"{c:.0f} spm",
-                   "That's on the low side — low cadence usually pairs with longer, "
-                   "loping strides and harder landings. Try nudging it up ~5% at a "
-                   "time (a metronome app or 170–180 bpm playlist helps). Think "
-                   "'quicker, lighter steps', not running faster."))
+                   "On the low side. Heiderscheit et al. found raising step rate "
+                   "just 5–10% cut energy absorbed at the knee by 20–34% and "
+                   "shortened the overstriding step. Nudge it up ~5% at a time "
+                   "with a metronome — quicker, lighter steps, not faster running.",
+                   "heiderscheit2011"))
     elif c <= 190:
         fb.append(("good", "Cadence", f"{c:.0f} spm",
-                   "Right in the healthy range for most runners (typically 165–185 "
-                   "at easy pace). No change needed."))
+                   "In the range where most runners land their foot near the body. "
+                   "No change needed — note cadence naturally rises with pace.",
+                   "heiderscheit2011"))
     else:
         fb.append(("info", "Cadence", f"{c:.0f} spm",
-                   "Quite high — fine if this was a fast interval or you're a "
-                   "smaller runner, but at easy pace it can mean short, choppy "
-                   "strides. Note cadence naturally rises with speed."))
+                   "Quite high — fine for a fast interval or a smaller runner, but "
+                   "at easy pace it can mean short, choppy strides.",
+                   "heiderscheit2011"))
 
-    lean = m["trunk_lean_deg"]
-    if lean < 1:
-        fb.append(("warn", "Trunk lean", f"{lean:.1f}°",
-                   "You're running very upright (or slightly leaning back), which "
-                   "tends to put the brakes on each stride. Aim for a slight "
-                   "whole-body forward lean from the ankles — like you're about "
-                   "to fall forward — not bending at the waist."))
-    elif lean <= 12:
-        fb.append(("good", "Trunk lean", f"{lean:.1f}° forward",
-                   "A comfortable forward lean (roughly 4–10° is typical for easy "
-                   "running). This lets gravity help you along."))
-    else:
-        fb.append(("warn", "Trunk lean", f"{lean:.1f}° forward",
-                   "That's a lot of forward lean — often it comes from bending at "
-                   "the waist rather than leaning from the ankles, which loads the "
-                   "lower back and hip flexors. Run tall: chest up, hips forward."))
-
-    shin, reach = m["shin_angle_deg"], m["foot_reach_legs"]
-    if shin > 8 or reach > 0.28:
-        fb.append(("warn", "Overstriding", f"shin {shin:.0f}° at contact",
-                   "Your foot is landing well ahead of your body with the shin "
-                   "angled forward — a classic overstride. Each landing acts as a "
-                   "brake and raises impact on knees and shins. The fix is usually "
-                   "cadence: quicker steps make the foot land closer to under "
-                   "your hips."))
-    elif shin > 4:
-        fb.append(("info", "Foot landing", f"shin {shin:.0f}° at contact",
-                   "Mild reach in front of the body at contact — common and only "
-                   "worth changing if you get shin or knee niggles. Slightly "
-                   "quicker cadence would bring it under you."))
-    else:
-        fb.append(("good", "Foot landing", f"shin {shin:.0f}° at contact",
-                   "Your foot lands close to under your center of mass with a "
-                   "near-vertical shin — efficient and low-impact."))
-
-    fs = m["foot_strike_type"]
-    counts = m["foot_strike_counts"]
-    dist = ", ".join(f"{v}× {k}" for k, v in sorted(counts.items(), key=lambda x: -x[1]))
-    if fs == "heel" and (shin > 8 or reach > 0.28):
-        fb.append(("warn", "Foot strike", f"mostly heel ({dist})",
-                   "Heel striking isn't a problem by itself, but combined with the "
-                   "overstride above it amplifies braking forces. Fixing the "
-                   "overstride usually softens the heel strike automatically — "
-                   "don't force a forefoot landing."))
-    else:
-        label = {"heel": "Heel striking with the foot landing under you is "
-                         "perfectly fine — most elite marathoners heel strike.",
-                 "midfoot": "A midfoot landing — nothing to change here.",
-                 "forefoot": "A forefoot landing — fine if it's natural to you; "
-                             "just watch for calf/Achilles tightness with volume."}[fs]
-        fb.append(("good", "Foot strike", f"mostly {fs} ({dist})", label))
-
-    ka = m["knee_angle_at_strike"]
-    if ka > 172:
-        fb.append(("warn", "Knee at landing", f"{ka:.0f}° (nearly straight)",
-                   "You're landing on an almost straight leg, which sends impact "
-                   "up through the joints instead of letting muscles absorb it. "
-                   "A softer, slightly bent knee at contact (usually a byproduct "
-                   "of fixing overstride) cushions each step."))
-    else:
-        fb.append(("good", "Knee at landing", f"{ka:.0f}°",
-                   "Nice soft knee at contact — your muscles are absorbing impact "
-                   "the way they should."))
-
+    # --- Vertical oscillation: valid from any angle (Folland 2017) ---
     if m["vo_cm"] is not None:
         vo_str = f"{m['vo_cm']:.1f} cm (est.)"
-        high = m["vo_cm"] > 10.5
-        mid = m["vo_cm"] > 8.5
+        high, mid = m["vo_cm"] > 10.5, m["vo_cm"] > 8.5
     else:
         vo_str = f"{m['vo_pct_leg']:.1f}% of leg length"
-        high = m["vo_pct_leg"] > 13
-        mid = m["vo_pct_leg"] > 10
+        high, mid = m["vo_pct_leg"] > 13, m["vo_pct_leg"] > 10
     if high:
         fb.append(("warn", "Vertical oscillation", vo_str,
-                   "You have noticeable bounce — energy going up and down instead "
-                   "of forward. Higher cadence and thinking 'run smooth and level, "
-                   "eyes on the horizon' usually reduces it."))
+                   "Noticeable bounce. Folland et al. found vertical oscillation "
+                   "was the movement variable most strongly tied to running "
+                   "economy — energy going up and down isn't going forward. Higher "
+                   "cadence and a level, smooth gaze usually reduce it.",
+                   "folland2017"))
     elif mid:
         fb.append(("info", "Vertical oscillation", vo_str,
-                   "A bit of bounce, within the normal range. Only worth "
-                   "attention if you're chasing efficiency."))
+                   "A bit of bounce, within the normal range. Worth attention only "
+                   "if you're chasing economy.", "folland2017"))
     else:
         fb.append(("good", "Vertical oscillation", vo_str,
-                   "Low bounce — your energy is going into forward motion."))
+                   "Low bounce — energy is going into forward motion, which tracks "
+                   "with better running economy.", "folland2017"))
 
+    if frontal:
+        # --- Contralateral pelvic drop (Bramah 2018) ---
+        cpd = m["pelvic_drop_deg"]
+        if cpd > 10:
+            fb.append(("warn", "Pelvic drop", f"{cpd:.1f}° peak",
+                       "Your hip drops noticeably on the swing side each step. "
+                       "Bramah et al. found this the single strongest gait "
+                       "predictor of running injury — each extra 1° raised injury "
+                       "odds ~80%, across ITB, PFP, shin splints and Achilles "
+                       "cases. Usually a glute-med/hip-stability issue; side "
+                       "planks and single-leg work help.", "bramah2018"))
+        elif cpd > 5:
+            fb.append(("info", "Pelvic drop", f"{cpd:.1f}° peak",
+                       "A mild hip drop on the swing side. Common and not alarming, "
+                       "but worth watching — hip-stability work keeps it in check.",
+                       "bramah2018"))
+        else:
+            fb.append(("good", "Pelvic drop", f"{cpd:.1f}° peak",
+                       "Your pelvis stays level through stance — strong sign of "
+                       "good hip stability and lower injury risk.", "bramah2018"))
+
+        # --- Stride width / crossover (frontal-plane mechanics, Bramah 2018) ---
+        sw = m["stride_width_ratio"]
+        if sw < 1.0:
+            fb.append(("warn", "Crossover / stride width", f"gap {sw:.1f}× hip width",
+                       "Your feet land close to (or across) the midline — a narrow, "
+                       "crossover gait. It goes hand in hand with the hip adduction "
+                       "and pelvic drop pattern linked to ITB and knee pain. Aim to "
+                       "land on 'two rails', not a tightrope.", "bramah2018"))
+        else:
+            fb.append(("good", "Crossover / stride width", f"gap {sw:.1f}× hip width",
+                       "Your feet land in two parallel lines — no crossover. Good "
+                       "for frontal-plane knee and hip loading.", "bramah2018"))
+    else:
+        # --- Sagittal-only cards ---
+        shin, reach = m["shin_angle_deg"], m["foot_reach_legs"]
+        if shin > 8 or reach > 0.28:
+            fb.append(("warn", "Overstriding", f"shin {shin:.0f}° at contact",
+                       "Your foot lands well ahead of your body with the shin "
+                       "angled forward — a classic overstride that brakes each step "
+                       "and raises knee/shin impact. The fix is usually cadence: "
+                       "quicker steps bring the foot under your hips.",
+                       "heiderscheit2011"))
+        elif shin > 4:
+            fb.append(("info", "Foot landing", f"shin {shin:.0f}° at contact",
+                       "Mild reach in front of the body at contact — common, worth "
+                       "changing only if you get shin or knee niggles.",
+                       "heiderscheit2011"))
+        else:
+            fb.append(("good", "Foot landing", f"shin {shin:.0f}° at contact",
+                       "Your foot lands close to under your center of mass with a "
+                       "near-vertical shin — efficient and low-impact.",
+                       "heiderscheit2011"))
+
+        fs = m["foot_strike_type"]
+        fsa = m["foot_strike_angle_deg"]
+        counts = m["foot_strike_counts"]
+        dist = ", ".join(f"{v}× {k}"
+                         for k, v in sorted(counts.items(), key=lambda x: -x[1]))
+        val = f"mostly {fs} · {fsa:+.0f}° ({dist})"
+        if fs == "heel" and (shin > 8 or reach > 0.28):
+            fb.append(("warn", "Foot strike", val,
+                       "By the Altman–Davis foot-strike angle (>8° = rearfoot) "
+                       "you're a heel-striker, and combined with the overstride "
+                       "above that amplifies braking. Fixing the overstride softens "
+                       "it automatically — don't force a forefoot landing.",
+                       "altman2012"))
+        else:
+            label = {"heel": "Heel-striking with the foot landing under you is "
+                             "fine — most elite marathoners do it.",
+                     "midfoot": "A midfoot landing — nothing to change.",
+                     "forefoot": "A forefoot landing — fine if natural; watch for "
+                                 "calf/Achilles tightness with volume."}[fs]
+            fb.append(("good", "Foot strike", val,
+                       f"{label} (classified by Altman–Davis foot-strike angle.)",
+                       "altman2012"))
+
+        ka = m["knee_angle_at_strike"]
+        if ka > 172:
+            fb.append(("warn", "Knee at landing", f"{ka:.0f}° (nearly straight)",
+                       "You land on an almost straight leg. Bramah et al. found "
+                       "injured runners contacted the ground with a more extended "
+                       "knee — a stiff leg passes impact to the joints instead of "
+                       "the muscles. A softer knee (often a byproduct of fixing "
+                       "overstride) cushions each step.", "bramah2018"))
+        else:
+            fb.append(("good", "Knee at landing", f"{ka:.0f}°",
+                       "Nice soft knee at contact — muscles absorb the impact, the "
+                       "pattern seen in uninjured runners.", "bramah2018"))
+
+        lean = m["trunk_lean_deg"]
+        if lean < 1:
+            fb.append(("warn", "Trunk lean", f"{lean:.1f}°",
+                       "You run very upright (or lean back slightly). Teng & Powers "
+                       "found more forward trunk flexion lowers patellofemoral "
+                       "(kneecap) stress; too upright brakes the stride and loads "
+                       "the knee. Lean slightly from the ankles, not the waist.",
+                       "teng2014"))
+        elif lean <= 12:
+            fb.append(("good", "Trunk lean", f"{lean:.1f}° forward",
+                       "A comfortable forward lean. Enough trunk flexion to ease "
+                       "knee load without overloading the back.", "teng2014"))
+        else:
+            fb.append(("warn", "Trunk lean", f"{lean:.1f}° forward",
+                       "A lot of forward lean — often bending at the waist, which "
+                       "loads the low back and hip flexors, and Bramah linked "
+                       "excessive forward lean to injury. Run tall: lean from the "
+                       "ankles, chest up.", "bramah2018"))
+
+    # --- Symmetry & arm carry: any view ---
     if m["symmetry_pct"] is not None:
         s = m["symmetry_pct"]
         if s > 8:
             fb.append(("warn", "L/R symmetry", f"{s:.0f}% difference",
-                       "Your left and right step timing differ noticeably. This can "
-                       "be camera noise, but if it's consistent across videos (or "
-                       "you have a nagging one-sided issue) it's worth a look from "
-                       "a physio or strength work on the weaker side."))
+                       "Left and right step timing differ noticeably. Can be camera "
+                       "noise, but if consistent across videos it's worth a physio "
+                       "look or single-side strength work.", None))
         else:
             fb.append(("good", "L/R symmetry", f"{s:.0f}% difference",
-                       "Left and right step timing are well matched."))
+                       "Left and right step timing are well matched.", None))
 
     if m["elbow_angle"] is not None:
         e = m["elbow_angle"]
         if e > 115:
             fb.append(("info", "Arm carry", f"elbow {e:.0f}°",
-                       "Arms are carried fairly straight/low. Bending the elbows "
-                       "closer to ~90° keeps the swing compact and helps rhythm."))
+                       "Arms carried fairly straight/low. Bending nearer ~90° keeps "
+                       "the swing compact and aids rhythm.", None))
         elif e < 60:
             fb.append(("info", "Arm carry", f"elbow {e:.0f}°",
-                       "Arms are quite tightly bent/high — make sure shoulders "
-                       "stay relaxed and hands loose."))
+                       "Arms quite tightly bent/high — keep shoulders relaxed and "
+                       "hands loose.", None))
         else:
             fb.append(("good", "Arm carry", f"elbow {e:.0f}°",
-                       "Elbow bend is in a relaxed, efficient range."))
+                       "Elbow bend is in a relaxed, efficient range.", None))
 
     order = {"warn": 0, "info": 1, "good": 2}
     fb.sort(key=lambda x: order[x[0]])
-    return [{"status": s, "title": t, "value": v, "message": msg}
-            for s, t, v, msg in fb]
+    return [{"status": s, "title": t, "value": v, "message": msg,
+             "source": CITATIONS.get(src) if src else None}
+            for s, t, v, msg, src in fb]
 
 
 def render_annotated(video_path, out_path, lm, S, metrics, per_strike, fps, size,
@@ -532,12 +657,19 @@ def render_annotated(video_path, out_path, lm, S, metrics, per_strike, fps, size
                                     (S["l_hip"][0][i] + S["r_hip"][0][i]) / 2),
             ((S["l_hip"][1][i] + S["r_hip"][1][i]) / 2 -
              (S["l_sh"][1][i] + S["r_sh"][1][i]) / 2) + 1e-9))
+        if metrics["view"] == "frontal":
+            obliq = math.degrees(math.atan2(
+                S["r_hip"][1][i] - S["l_hip"][1][i],
+                abs(S["r_hip"][0][i] - S["l_hip"][0][i]) + 1e-9))
+            second = f"pelvis tilt {obliq:+.0f} deg"
+        else:
+            second = f"trunk lean {lean:+.0f} deg"
         hud = [f"cadence {metrics['cadence']:.0f} spm",
-               f"trunk lean {lean:+.0f} deg",
-               f"t = {i / fps:.2f} s"]
+               second,
+               f"{metrics['view']} view · t = {i / fps:.2f} s"]
         box_h = 22 * len(hud) + 14
         overlay = frame.copy()
-        cv2.rectangle(overlay, (10, 10), (250, 10 + box_h), (0, 0, 0), -1)
+        cv2.rectangle(overlay, (10, 10), (290, 10 + box_h), (0, 0, 0), -1)
         frame = cv2.addWeighted(overlay, 0.55, frame, 0.45, 0)
         for j, line in enumerate(hud):
             cv2.putText(frame, line, (20, 34 + 22 * j),
@@ -581,9 +713,50 @@ def analyze(video_path, out_video_path, height_cm=None, progress=None):
     metrics, per_strike, chart, S = compute_metrics(lm, fps, size, height_cm)
     render_annotated(video_path, out_video_path, lm, S, metrics, per_strike,
                      fps, size, progress)
-    return {"metrics": metrics, "feedback": build_feedback(metrics),
-            "chart": chart,
-            "strikes": per_strike}
+    feedback = build_feedback(metrics)
+    # Distinct studies actually cited in this report, for a References section.
+    seen, refs = set(), []
+    for f in feedback:
+        s = f["source"]
+        if s and s["cite"] not in seen:
+            seen.add(s["cite"])
+            refs.append(s)
+    return {"metrics": metrics, "feedback": feedback, "chart": chart,
+            "references": refs, "strikes": per_strike}
+
+
+def _selfcheck():
+    """Synthetic frontal-view runner with a known ~8° pelvic drop → assert the
+    view classifier and pelvic-drop math. Also checks Altman–Davis FSA cutoffs."""
+    fps, secs, w, h = 30.0, 6, 640, 480
+    n = int(fps * secs)
+    lm = np.zeros((n, 33, 3))
+    A = 6.3  # hip y amplitude → atan2(2A, 90px hip width) ≈ 8°
+    for i in range(n):
+        t = i / fps
+        s = math.sin(2 * math.pi * 1.5 * t)
+        P = {NOSE: (320, 120), L_SHOULDER: (380, 180), R_SHOULDER: (260, 180),
+             L_ELBOW: (395, 250), R_ELBOW: (245, 250),
+             L_WRIST: (400, 315), R_WRIST: (240, 315),
+             L_HIP: (365, 280 + A * s), R_HIP: (275, 280 - A * s),
+             L_KNEE: (360, 380), R_KNEE: (280, 380),
+             L_ANKLE: (358, 460 + 10 * s), R_ANKLE: (282, 460 - 10 * s),
+             L_HEEL: (356, 465 + 10 * s), R_HEEL: (284, 465 - 10 * s),
+             L_FOOT: (366, 470 + 10 * s), R_FOOT: (274, 470 - 10 * s)}
+        for idx in range(33):
+            x, y = P.get(idx, (320, 240))
+            lm[i, idx] = (x, y, 0.9)
+
+    m, _, _, _ = compute_metrics(lm, fps, (w, h))
+    assert m["view"] == "frontal", f"view={m['view']} ratio={m['view_ratio']:.2f}"
+    assert 6 <= m["pelvic_drop_deg"] <= 10, f"cpd={m['pelvic_drop_deg']:.1f}"
+
+    # Altman–Davis foot-strike-angle cutoffs (>8 rear, <-1.6 fore, else mid)
+    def classify(fsa):
+        return "heel" if fsa > 8 else "forefoot" if fsa < -1.6 else "midfoot"
+    assert classify(12) == "heel" and classify(-5) == "forefoot" \
+        and classify(3) == "midfoot"
+    print(f"selfcheck OK · view=frontal · pelvic_drop={m['pelvic_drop_deg']:.1f}°")
 
 
 if __name__ == "__main__":
@@ -591,12 +764,19 @@ if __name__ == "__main__":
     import json as _json
 
     ap = argparse.ArgumentParser(description="Analyze running form from a video.")
-    ap.add_argument("video")
+    ap.add_argument("video", nargs="?")
+    ap.add_argument("--selfcheck", action="store_true",
+                    help="run the built-in synthetic self-check and exit")
     ap.add_argument("-o", "--out", default=None,
                     help="annotated video path (default: <video>_annotated.mp4)")
     ap.add_argument("--height", type=float, default=None,
                     help="runner height in cm (enables bounce estimate in cm)")
     args = ap.parse_args()
+    if args.selfcheck:
+        _selfcheck()
+        raise SystemExit(0)
+    if not args.video:
+        ap.error("a video path is required (or use --selfcheck)")
     out = args.out or os.path.splitext(args.video)[0] + "_annotated.mp4"
 
     res = analyze(args.video, out, height_cm=args.height,
@@ -604,10 +784,13 @@ if __name__ == "__main__":
     print()
     m = res["metrics"]
     icons = {"good": "✅", "info": "ℹ️ ", "warn": "⚠️ "}
-    print(f"\n{m['n_steps']} steps over {m['duration_s']:.1f}s\n")
+    print(f"\n{m['view']} view · {m['n_steps']} steps over {m['duration_s']:.1f}s\n")
     for f in res["feedback"]:
         print(f"{icons[f['status']]} {f['title']} — {f['value']}")
-        print(f"   {f['message']}\n")
+        print(f"   {f['message']}")
+        if f["source"]:
+            print(f"   ↳ {f['source']['cite']}")
+        print()
     for w in m["warnings"]:
         print("⚠️ ", w)
     json_path = os.path.splitext(out)[0] + ".json"

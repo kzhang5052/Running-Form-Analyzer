@@ -56,6 +56,16 @@ function FindingRow({ f }: { f: Feedback }) {
       <p className="mt-1.5 max-w-2xl text-[14px] leading-relaxed text-fog/85">
         {f.message}
       </p>
+      {f.source && (
+        <a
+          href={f.source.url}
+          target="_blank"
+          rel="noreferrer"
+          className="mt-2 inline-block font-data text-[11px] text-steel underline decoration-line underline-offset-2 hover:text-volt"
+        >
+          ↳ {f.source.cite}
+        </a>
+      )}
     </div>
   )
 }
@@ -85,7 +95,7 @@ export default function ReportView({ jobId }: { jobId: string }) {
   if (!result)
     return <p className="font-data text-sm text-steel">Loading report…</p>
 
-  const { metrics: m, feedback, chart } = result
+  const { metrics: m, feedback, chart, references } = result
   const counts = { warn: 0, info: 0, good: 0 }
   feedback.forEach((f) => counts[f.status]++)
   const strikeDist = Object.entries(m.foot_strike_counts)
@@ -105,6 +115,9 @@ export default function ReportView({ jobId }: { jobId: string }) {
           <h1 className="font-display text-5xl font-bold uppercase leading-none tracking-tight">
             Stride report
           </h1>
+          <span className="mt-3 inline-block border border-line px-2 py-1 font-data text-[11px] uppercase tracking-[0.18em] text-volt">
+            {m.view === 'frontal' ? 'Front / rear view' : 'Side view'}
+          </span>
         </div>
         <div className="flex gap-5 font-data text-[13px]">
           <span className="text-warnc">{counts.warn} fix</span>
@@ -122,26 +135,26 @@ export default function ReportView({ jobId }: { jobId: string }) {
         </p>
       ))}
 
-      {/* Data strip */}
+      {/* Data strip — view-aware */}
       <div className="mt-10 grid grid-cols-2 gap-y-8 border-y border-line py-6 sm:grid-cols-3 lg:grid-cols-6">
         <Stat label="Cadence" value={m.cadence.toFixed(0)} unit="spm" accent />
-        <Stat
-          label="Foot strike"
-          value={m.foot_strike_type}
-        />
-        <Stat
-          label="Trunk lean"
-          value={`${m.trunk_lean_deg.toFixed(1)}°`}
-        />
-        <Stat
-          label="Shin @ contact"
-          value={`${m.shin_angle_deg.toFixed(0)}°`}
-        />
+        {m.view === 'frontal' ? (
+          <>
+            <Stat label="Pelvic drop" value={`${m.pelvic_drop_deg.toFixed(1)}°`} accent />
+            <Stat label="Stride width" value={`${m.stride_width_ratio.toFixed(1)}×`} unit="hip" />
+          </>
+        ) : (
+          <>
+            <Stat label="Foot strike" value={m.foot_strike_type} />
+            <Stat label="Shin @ contact" value={`${m.shin_angle_deg.toFixed(0)}°`} />
+          </>
+        )}
+        {m.view === 'sagittal' && (
+          <Stat label="Trunk lean" value={`${m.trunk_lean_deg.toFixed(1)}°`} />
+        )}
         <Stat
           label="Bounce"
-          value={
-            m.vo_cm != null ? m.vo_cm.toFixed(1) : m.vo_pct_leg.toFixed(1)
-          }
+          value={m.vo_cm != null ? m.vo_cm.toFixed(1) : m.vo_pct_leg.toFixed(1)}
           unit={m.vo_cm != null ? 'cm est.' : '% leg'}
         />
         <Stat
@@ -165,7 +178,9 @@ export default function ReportView({ jobId }: { jobId: string }) {
           <p className="mt-3 font-data text-[12px] leading-relaxed text-steel">
             green skeleton = detected pose · yellow ring = foot strike
             <br />
-            strike mix: {strikeDist}
+            {m.view === 'frontal'
+              ? 'HUD shows live pelvis tilt — watch the hips stay level'
+              : `strike mix: ${strikeDist}`}
           </p>
         </section>
 
@@ -192,14 +207,53 @@ export default function ReportView({ jobId }: { jobId: string }) {
             strikes={chart.strikes}
             caption="ankle height over time"
           />
-          <StrideChart
-            t={chart.t}
-            series={[{ data: chart.lean, color: '#ffb020', label: 'trunk lean (° fwd)' }]}
-            zeroLine
-            caption="posture over time"
-          />
+          {m.view === 'frontal' ? (
+            <StrideChart
+              t={chart.t}
+              series={[
+                { data: chart.pelvis_obliq, color: '#ffb020', label: 'pelvic tilt (°)' },
+              ]}
+              zeroLine
+              caption="pelvis level over time — swing away from 0 is pelvic drop"
+            />
+          ) : (
+            <StrideChart
+              t={chart.t}
+              series={[
+                { data: chart.lean, color: '#ffb020', label: 'trunk lean (° fwd)' },
+              ]}
+              zeroLine
+              caption="posture over time"
+            />
+          )}
         </div>
       </section>
+
+      {/* References */}
+      {references.length > 0 && (
+        <section className="mt-14">
+          <p className="microlabel mb-4">
+            References — thresholds &amp; guidance are grounded in
+          </p>
+          <ol className="space-y-3">
+            {references.map((r) => (
+              <li key={r.cite} className="border-l border-line pl-4">
+                <a
+                  href={r.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="font-data text-[13px] text-fog underline decoration-line underline-offset-2 hover:text-volt"
+                >
+                  {r.cite}
+                </a>
+                <p className="mt-1 max-w-2xl text-[13px] leading-relaxed text-steel">
+                  {r.note}
+                </p>
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
 
       <div className="mt-14 flex items-center gap-6 border-t border-line pt-8">
         <Button

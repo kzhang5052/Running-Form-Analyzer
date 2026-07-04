@@ -9,9 +9,11 @@ const ACCEPTED = ['.mp4', '.mov', '.m4v', '.avi', '.webm', '.mkv']
 const METRICS = [
   ['Cadence', 'steps per minute'],
   ['Overstride', 'shin angle at contact'],
-  ['Foot strike', 'heel · mid · forefoot'],
+  ['Foot strike', 'Altman–Davis angle'],
   ['Trunk lean', 'degrees off vertical'],
   ['Knee at landing', 'stiff-leg check'],
+  ['Pelvic drop', 'front/rear · Bramah'],
+  ['Crossover', 'front/rear · stride width'],
   ['Bounce', 'vertical oscillation'],
   ['Symmetry', 'left vs right timing'],
   ['Arm carry', 'elbow angle'],
@@ -60,9 +62,12 @@ export default function UploadView() {
           <span className="text-volt">See the stride.</span>
         </h1>
         <p className="mt-5 max-w-md text-[15px] leading-relaxed text-steel">
-          Upload 5–15 seconds of continuous running filmed from the side —
-          whole body in frame, camera steady. Treadmill clips work great.
-          Everything is processed on this Mac; the video never leaves it.
+          Upload 5–15 seconds of continuous running, whole body in frame,
+          camera steady. A <strong className="text-fog">side view</strong>{' '}
+          reads stride, foot strike and posture; a{' '}
+          <strong className="text-fog">front or rear view</strong> reads pelvic
+          drop and crossover. The angle is detected automatically. Everything
+          runs on this Mac; the video never leaves it.
         </p>
 
         <div

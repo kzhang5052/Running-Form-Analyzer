@@ -2,19 +2,29 @@
 
 Analyze your running form from a video, fully locally on your Mac. Upload a
 clip, get back an annotated video (skeleton + foot strikes) plus metrics and
-coaching feedback on:
+coaching feedback. **The camera angle is detected automatically** and the
+metrics adapt to it:
 
+**Side view (sagittal):**
 - **Cadence** (steps/min)
 - **Overstriding** — shin angle & foot reach at contact
-- **Foot-strike type** — heel / midfoot / forefoot
+- **Foot-strike type** — heel / midfoot / forefoot, by the Altman–Davis
+  foot-strike angle (>8° rearfoot, −1.6–8° midfoot, <−1.6° forefoot)
 - **Trunk lean**
 - **Knee angle at landing** (stiff-leg landing check)
-- **Vertical oscillation** (bounce; in cm if you give your height)
-- **Left/right symmetry**
-- **Arm carry** (elbow angle)
 
-Built on MediaPipe pose estimation (33 landmarks/frame). Nothing is uploaded
-anywhere — it all runs on-device.
+**Front / rear view (frontal):**
+- **Contralateral pelvic drop** — the strongest gait predictor of running
+  injury in the literature
+- **Crossover / stride width** — feet landing on the midline
+
+**Either view:** vertical oscillation (bounce; in cm if you give your height),
+left/right symmetry, arm carry.
+
+Every coaching note is grounded in a named study and links to it (Bramah 2018,
+Heiderscheit 2011, Folland 2017, Altman & Davis 2012, Teng & Powers 2014); the
+report ends with a References section. Built on MediaPipe pose estimation (33
+landmarks/frame). Nothing is uploaded anywhere — it all runs on-device.
 
 ## Run the web app
 

@@ -1,8 +1,11 @@
+export type Source = { cite: string; note: string; url: string }
+
 export type Feedback = {
   status: 'good' | 'info' | 'warn'
   title: string
   value: string
   message: string
+  source: Source | null
 }
 
 export type ChartData = {
@@ -10,6 +13,7 @@ export type ChartData = {
   l_ankle_y: number[]
   r_ankle_y: number[]
   lean: number[]
+  pelvis_obliq: number[]
   strikes: { t: number; side: 'L' | 'R' }[]
 }
 
@@ -18,6 +22,7 @@ export type Metrics = {
   fps: number
   duration_s: number
   treadmill: boolean
+  view: 'sagittal' | 'frontal'
   n_steps: number
   cadence: number
   symmetry_pct: number | null
@@ -27,6 +32,9 @@ export type Metrics = {
   knee_angle_at_strike: number
   foot_strike_type: string
   foot_strike_counts: Record<string, number>
+  foot_strike_angle_deg: number
+  pelvic_drop_deg: number
+  stride_width_ratio: number
   vo_pct_leg: number
   vo_cm: number | null
   elbow_angle: number | null
@@ -37,6 +45,7 @@ export type Result = {
   metrics: Metrics
   feedback: Feedback[]
   chart: ChartData
+  references: Source[]
 }
 
 export type JobStatus = {
