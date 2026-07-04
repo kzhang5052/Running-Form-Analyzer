@@ -26,6 +26,14 @@ Heiderscheit 2011, Folland 2017, Altman & Davis 2012, Teng & Powers 2014); the
 report ends with a References section. Built on MediaPipe pose estimation (33
 landmarks/frame). Nothing is uploaded anywhere — it all runs on-device.
 
+## Native offline iPhone app
+
+There's a SwiftUI app in [`ios/`](ios/README_iOS.md) that runs the same analysis
+**fully on-device** (no server, no network) using MediaPipe's iOS SDK. The
+metric math is ported to Swift and self-checks with `ios/selfcheck.sh`. Building
+it needs full Xcode + `ios/setup.sh` — see [ios/README_iOS.md](ios/README_iOS.md).
+The PWA below is the zero-build option that works today.
+
 ## Install it as an app on iPhone + Mac (PWA)
 
 The web app is installable — it adds a home-screen icon and runs fullscreen, no

@@ -1,0 +1,7 @@
+platform :ios, '17.0'
+
+target 'RunningForm' do
+  use_frameworks!
+  # On-device pose estimation — same model as the Python app.
+  pod 'MediaPipeTasksVision'
+end

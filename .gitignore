@@ -9,3 +9,9 @@ ui/.parcel-cache/
 .DS_Store
 # Built app bundle bakes in an absolute path — build locally with make_app.sh
 *.app/
+# iOS: generated project + pods (reproduced by ios/setup.sh)
+ios/RunningForm.xcodeproj/
+ios/RunningForm.xcworkspace/
+ios/Pods/
+ios/build/
+ios/DerivedData/

@@ -43,8 +43,8 @@ def render(size):
     return img
 
 
-master = render(512)
-for sz in (512, 192, 180):
-    out = master if sz == 512 else cv2.resize(master, (sz, sz), interpolation=cv2.INTER_AREA)
+master = render(1024)
+for sz in (1024, 512, 192, 180):
+    out = master if sz == 1024 else cv2.resize(master, (sz, sz), interpolation=cv2.INTER_AREA)
     cv2.imwrite(os.path.join(OUT, f"icon-{sz}.png"), out)
     print("wrote", f"icon-{sz}.png")
