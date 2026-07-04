@@ -17,8 +17,38 @@ BASE = os.path.dirname(os.path.abspath(__file__))
 UPLOADS = os.path.join(BASE, "uploads")
 OUTPUTS = os.path.join(BASE, "outputs")
 BUNDLE = os.path.join(BASE, "ui", "bundle.html")
+PWA = os.path.join(BASE, "pwa")
 os.makedirs(UPLOADS, exist_ok=True)
 os.makedirs(OUTPUTS, exist_ok=True)
+
+# PWA head tags injected into the bundled SPA so it installs to the home screen
+# (iPhone: Share → Add to Home Screen; Mac: browser → Install) and runs
+# fullscreen. Read/patched once at startup — rebuilds of the bundle need a
+# server restart, which is already the case.
+_PWA_HEAD = (
+    '<link rel="manifest" href="/manifest.webmanifest">'
+    '<meta name="theme-color" content="#0a0c0e">'
+    '<meta name="mobile-web-app-capable" content="yes">'
+    '<meta name="apple-mobile-web-app-capable" content="yes">'
+    '<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">'
+    '<meta name="apple-mobile-web-app-title" content="Form/Check">'
+    '<link rel="apple-touch-icon" href="/icons/icon-180.png">'
+    "<script>if('serviceWorker' in navigator){addEventListener('load',"
+    "function(){navigator.serviceWorker.register('/sw.js')})}</script>"
+)
+
+
+def _index_html():
+    html = open(BUNDLE, encoding="utf-8").read()
+    # viewport-fit=cover lets the fullscreen app draw under the iPhone notch.
+    html = html.replace(
+        '<meta name=viewport content="width=device-width, initial-scale=1.0">',
+        '<meta name=viewport content="width=device-width, initial-scale=1.0, '
+        'viewport-fit=cover">')
+    return html.replace("<body", _PWA_HEAD + "<body", 1)
+
+
+INDEX_HTML = _index_html()
 
 API_VERSION = "1.0"
 
@@ -91,7 +121,23 @@ def _run_job(job_id, video_path, height_cm):
 
 @app.route("/")
 def index():
-    return send_file(BUNDLE)
+    return INDEX_HTML
+
+
+@app.route("/manifest.webmanifest")
+def manifest():
+    return send_file(os.path.join(PWA, "manifest.webmanifest"),
+                     mimetype="application/manifest+json")
+
+
+@app.route("/sw.js")
+def service_worker():
+    return send_file(os.path.join(PWA, "sw.js"), mimetype="text/javascript")
+
+
+@app.route("/icons/<path:name>")
+def icons(name):
+    return send_from_directory(os.path.join(PWA, "icons"), name)
 
 
 # Old-style links from before the SPA — forward to hash routes

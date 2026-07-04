@@ -26,6 +26,25 @@ Heiderscheit 2011, Folland 2017, Altman & Davis 2012, Teng & Powers 2014); the
 report ends with a References section. Built on MediaPipe pose estimation (33
 landmarks/frame). Nothing is uploaded anywhere — it all runs on-device.
 
+## Install it as an app on iPhone + Mac (PWA)
+
+The web app is installable — it adds a home-screen icon and runs fullscreen, no
+browser chrome. Processing still happens on your Mac (the phone films, uploads,
+and gets the report back), so keep the Mac serving while you use it.
+
+1. **On the Mac**, double-click **`serve.command`** (or run
+   `HOST=<your-ip> .venv/bin/python app.py`). It prints the URL to open, binding
+   to your Tailscale IP so it works from anywhere your devices are signed in
+   (falls back to your Wi-Fi IP). For this Mac that's
+   `http://100.64.248.8:5177`.
+2. **On the iPhone/iPad** (signed into the same Tailscale tailnet, or same
+   Wi-Fi), open that URL in Safari → **Share ⇧ → Add to Home Screen**. You now
+   have a "Form/Check" app icon that opens fullscreen.
+3. **On a Mac/desktop**, open the URL in Chrome/Edge → **Install** in the
+   address bar (or use the double-click launcher below for local-only use).
+
+To stop serving: Ctrl-C in the `serve.command` window.
+
 ## Run it as a Mac app (double-click)
 
 ```bash
