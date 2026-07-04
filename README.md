@@ -26,7 +26,20 @@ Heiderscheit 2011, Folland 2017, Altman & Davis 2012, Teng & Powers 2014); the
 report ends with a References section. Built on MediaPipe pose estimation (33
 landmarks/frame). Nothing is uploaded anywhere — it all runs on-device.
 
-## Run the web app
+## Run it as a Mac app (double-click)
+
+```bash
+cd ~/Claude/Projects/running-form-analyzer
+./make_app.sh
+```
+
+This builds **Running Form Analyzer.app** (also copied to `~/Applications`, so
+it shows up in Spotlight/Launchpad). Double-click it: it starts the local
+server if it isn't already running and opens the UI in its own window. Re-run
+`make_app.sh` only if you move the project. To stop the background server:
+`lsof -ti:5177 | xargs kill`.
+
+## Or run the web app from the terminal
 
 ```bash
 cd ~/Claude/Projects/running-form-analyzer

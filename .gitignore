@@ -7,3 +7,5 @@ ui/node_modules/
 ui/dist/
 ui/.parcel-cache/
 .DS_Store
+# Built app bundle bakes in an absolute path — build locally with make_app.sh
+*.app/
